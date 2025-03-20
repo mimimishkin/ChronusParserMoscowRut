@@ -27,13 +27,12 @@ enum class Place(
 		searchType = SearchType.BY_GROUP_PERSON_PLACE,
 	),
 	YOUR_PLACE(
-		cyrillicName = "Уч. заведение",
-		city = City.YOUR_CITY,
+		cyrillicName = "РУТ (МИИТ)",
+		city = City.MOSCOW,
 		contributor = Contributor.YOU,
-		defaultUrl = "https://your_place.edu/your_schedule_api/",
+		defaultUrl = "https://rut-miit.ru/",
 		minSearchChars = null,
-		searchType = SearchType.BY_GROUP,
-		lessonDurationInMinutes = 90,
-		apiCredits = "Your Schedule API" to "https://github.com/you/schedule_api",
+		searchType = SearchType.BY_GROUP_PERSON_PLACE,
+		lessonDurationInMinutes = 80
 	),
 }
