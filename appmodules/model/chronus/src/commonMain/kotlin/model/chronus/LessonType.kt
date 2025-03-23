@@ -32,15 +32,18 @@ fun LessonType.asString(): String? = when (this) {
 	is LessonType.Other -> correctNameOrNull()
 }
 
-val allTypes = mutableSetOf<String?>()
+fun LessonType.asShortString(): String? = when (this) {
+	LessonType.Lecture -> "Лек."
+	LessonType.Practice -> "Пр."
+	LessonType.LabWork -> "Лаб."
+	LessonType.Project -> "Проект"
+	LessonType.Exam -> "Экз."
+	LessonType.CourseCredit -> "Зач."
+	LessonType.Consultation -> "Конс."
+	is LessonType.Other -> asString()
+}
 
-fun String?.asLessonType(): LessonType = when (val lower = this.also {
-	val size = allTypes.size
-	allTypes += it
-	if (allTypes.size > size) {
-		println(allTypes.joinToString("\n").encodeToByteArray().joinToString(prefix = "[", postfix = "]"))
-	}
-}?.trim()?.lowercase() ?: "") {
+fun String?.asLessonType(): LessonType = when (val lower = this?.trim()?.lowercase() ?: "") {
 	// обратите внимание: тип должен быть указан маленькими буквами
 
 	"лекция",
@@ -75,11 +78,7 @@ fun String?.asLessonType(): LessonType = when (val lower = this.also {
 	else -> {
 		if (lower.contains(';') || lower.contains(',')) {
 			val types = lower.split(';', ',').map { it.asLessonType() }
-			LessonType.Other(types.joinToString { it.asString()!! }) /* LessonType.Multiple(types) */
-		} else if (lower.contains("(вебинар)")) {
-			lower.substringBefore(" (вебинар)").asLessonType()/*.copy { format = Webinar }*/
-		} else if (lower.contains("(конференция)")) {
-			lower.substringBefore(" (конференция)").asLessonType()/*.copy { format = Conference }*/
+			LessonType.Other(types.joinToString(", ") { it.asShortString()!! })
 		} else {
 			LessonType.Other(lower)
 		}

@@ -96,16 +96,28 @@ private suspend fun parseTimetable(client: HttpClient, url: String, parseOther: 
 					val (start, end) = time.trim().split(" — ").map { it.asLocalTime()!!.atDate(date) }
 
 					contentElement.children().chunked(3).map { (title, about) ->
-						val type = title.text().asLessonType()
+						val rawType = title.text()
+						val isOnline = "Вебинар" in rawType
+						val type = (if (isOnline) rawType.replace(" (Вебинар)", "") else rawType)
 						val name = title.nextSibling()!!.toString().trim()
 
 						val professors = about.getElementsByClass("icon-academic-cap").map {
 							EntryInfo(it.attr("title"), YOUR_PLACE.defaultUrl.dropLast(1) + it.attr("href"))
 						}.toSet()
 
-						val locations = about.getElementsByClass("icon-location").map {
-							EntryInfo(it.attr("title"), it.attribute("href")?.let { YOUR_PLACE.defaultUrl + it.value })
-						}.toSet()
+						val locationHints = mutableListOf<String>()
+						val locations = if (isOnline) {
+							setOf(EntryInfo("Вебинар", null))
+						} else {
+							about.getElementsByClass("icon-location").map {
+								val hint = it.attr("title")
+								locationHints += hint
+
+								val name = it.lastChild().toString().replace("Аудитория ", "").trim()
+								val url = it.attribute("href")?.let { YOUR_PLACE.defaultUrl + it.value }
+								EntryInfo(name, url)
+							}.toSet()
+						}
 
 						val groups = about.getElementsByClass("icon-community").map {
 							val name = it.lastChild().toString().trim()
@@ -116,13 +128,20 @@ private suspend fun parseTimetable(client: HttpClient, url: String, parseOther: 
 
 						Lesson(
 							name = name,
-							type = type,
+							type = type.asLessonType(),
 							startTime = start,
 							durationInMinutes = start.toInstant(zone).until(end.toInstant(zone), MINUTE).toInt(),
 							groups = ordinal.toSet(),
 							subgroups = sub.map { it.name.substringAfter('.').toInt() }.toSet(),
 							persons = professors,
 							classrooms = locations,
+							additionalInfo = locationHints.takeIf { it.isNotEmpty() }?.let {
+								if (it.size == 1) {
+									"Подсказка к аудитории: " + it[0]
+								} else {
+									"Подсказки к аудиториям:\n" + it.joinToString("\n")
+								}
+							}
 						)
 					}
 				}

@@ -32,7 +32,6 @@ enum class Place(
 		contributor = Contributor.YOU,
 		defaultUrl = "https://rut-miit.ru/",
 		minSearchChars = 0,
-		searchType = SearchType.BY_GROUP_PERSON,
-		lessonDurationInMinutes = 80
+		searchType = SearchType.BY_GROUP_PERSON
 	),
 }
