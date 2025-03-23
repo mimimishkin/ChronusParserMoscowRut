@@ -21,11 +21,11 @@ import model.chronus.ScheduleType.PERSON
 suspend fun getSearchResults(client: HttpClient, json: Json, query: String): List<Schedule>? = coroutineScope {
 	val groups = async { searchGroups(client, query) }
 	val professors = async { searchProfessors(client, query) }
-	if (groups.await() == null) {
-		professors.cancel()
+	if (professors.await() == null) {
+		groups.cancel()
 		return@coroutineScope null
 	}
-	if (professors.await() == null) {
+	if (groups.await() == null) {
 		return@coroutineScope null
 	}
 

@@ -6,6 +6,7 @@ import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import model.common.parseRus
@@ -16,22 +17,23 @@ import kotlinx.datetime.Clock
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DateTimeUnit.Companion.MINUTE
 import kotlinx.datetime.LocalDate
-import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atDate
 import kotlinx.datetime.daysUntil
 import kotlinx.datetime.plus
 import kotlinx.datetime.toInstant
-import kotlinx.datetime.toLocalDateTime
+import kotlinx.datetime.todayIn
 import kotlinx.datetime.until
 import kotlinx.serialization.json.Json
 import library.logger.LogType
 import library.logger.log
 import model.chronus.EntryInfo
 import model.chronus.Lesson
+import model.chronus.LessonType
 import model.chronus.Place.YOUR_PLACE
 import model.chronus.Schedule
 import model.chronus.asLessonType
+import model.chronus.asString
 import model.common.asDayOfWeek
 import model.common.asLocalTime
 import model.common.asMonth
@@ -39,7 +41,12 @@ import model.common.weekStartDay
 import kotlin.String
 
 suspend fun getLessons(client: HttpClient, json: Json, schedule: Schedule): List<Lesson>? {
-	return parseTimetable(client, schedule.url)
+	return try {
+		parseTimetable(client, schedule.url)
+	} catch (e: Exception) {
+		log(LogType.NetworkClientError, e)
+		return null
+	}
 }
 
 private suspend fun parseTimetable(client: HttpClient, url: String, parseOther: Boolean = true): List<Lesson>? {
@@ -59,7 +66,7 @@ private suspend fun parseTimetable(client: HttpClient, url: String, parseOther: 
 		val otherLessons = if (parseOther) {
 			supervisorScope {
 				timetableList.getElementsByTag("a").drop(1).map { it: Element ->
-					async {
+					async(Dispatchers.IO) {
 						val res = parseTimetable(client, YOUR_PLACE.defaultUrl.dropLast(1) + it.attr("href"), false)
 						if (res == null)
 							cancel()
@@ -70,11 +77,11 @@ private suspend fun parseTimetable(client: HttpClient, url: String, parseOther: 
 		} else emptyList()
 
 		val zone = TimeZone.of(YOUR_PLACE.city.timeZoneId)
-		val now = Clock.System.now().toLocalDateTime(zone)
+		val today = Clock.System.todayIn(zone)
 		val days = page.getElementsByClass("info-block_collapse")
 		val lessons = days.flatMap { day ->
 			val date = day.attribute("data-date")?.let { LocalDate.parseRus(it.value) }
-				?: day.select(".info-block__header > span > span").text().parseRusShortDate(now)
+				?: day.select(".info-block__header > span > span").text().parseRusShortDate(today)
 				?: run {
 					val dayOfWeek = day.select(".info-block__header > span").text().asDayOfWeek()!!
 					val weekContainer = day.parents().firstOrNull { it.id().startsWith("week") }
@@ -83,12 +90,12 @@ private suspend fun parseTimetable(client: HttpClient, url: String, parseOther: 
 					val activeTimetableLink = timetableList.getElementsByClass("active").first()!!.child(0)
 					val start = LocalDate.parse(activeTimetableLink.attr("href").substringAfter("start=").substringBefore('&'))
 
-					val periodsBetween = start.until(now.date, DateTimeUnit.WEEK) / period
+					val periodsBetween = start.until(today, DateTimeUnit.WEEK) / period
 					val originalWeek = start.plus(periodsBetween * period + week - 1, DateTimeUnit.WEEK)
 					originalWeek.weekStartDay().plus(dayOfWeek.ordinal, DateTimeUnit.DAY)
 				}
 
-			if (date.daysUntil(now.date) <= 7) { // оставляем расписание максимум на неделю назад (если предоставляется)
+			if (date.daysUntil(today) <= 7) { // оставляем расписание максимум на неделю назад (если предоставляется)
 				day.getElementsByClass("timetable__list-timeslot").flatMap { slot ->
 					val (timeElement, contentElement) = slot.children()
 
@@ -128,7 +135,25 @@ private suspend fun parseTimetable(client: HttpClient, url: String, parseOther: 
 
 						Lesson(
 							name = name,
-							type = type.asLessonType(),
+							type = type.let {
+								fun LessonType.asShortString(): String? = when (this) {
+									LessonType.Lecture -> "Лек."
+									LessonType.Practice -> "Пр."
+									LessonType.LabWork -> "Лаб."
+									LessonType.Project -> "Проект"
+									LessonType.Exam -> "Экз."
+									LessonType.CourseCredit -> "Зач."
+									LessonType.Consultation -> "Конс."
+									is LessonType.Other -> asString()
+								}
+
+								if (it.contains(';') || it.contains(',')) {
+									val types = it.split(';', ',').map { it.asLessonType() }
+									LessonType.Other(types.joinToString(", ") { it.asShortString()!! })
+								} else {
+									it.asLessonType()
+								}
+							},
 							startTime = start,
 							durationInMinutes = start.toInstant(zone).until(end.toInstant(zone), MINUTE).toInt(),
 							groups = ordinal.toSet(),
@@ -157,7 +182,7 @@ private suspend fun parseTimetable(client: HttpClient, url: String, parseOther: 
 /**
  * Даты вида 12 ноября, 31 Декабря...
  */
-private fun String.parseRusShortDate(now: LocalDateTime): LocalDate? {
+private fun String.parseRusShortDate(now: LocalDate): LocalDate? {
 	return if (this.isNotEmpty()) { // ошибка буквально только в одном расписании
 		val day = this.substringBefore(' ').toInt()
 		val month = this.substringAfter(' ').asMonth()!!

@@ -32,17 +32,6 @@ fun LessonType.asString(): String? = when (this) {
 	is LessonType.Other -> correctNameOrNull()
 }
 
-fun LessonType.asShortString(): String? = when (this) {
-	LessonType.Lecture -> "Лек."
-	LessonType.Practice -> "Пр."
-	LessonType.LabWork -> "Лаб."
-	LessonType.Project -> "Проект"
-	LessonType.Exam -> "Экз."
-	LessonType.CourseCredit -> "Зач."
-	LessonType.Consultation -> "Конс."
-	is LessonType.Other -> asString()
-}
-
 fun String?.asLessonType(): LessonType = when (val lower = this?.trim()?.lowercase() ?: "") {
 	// обратите внимание: тип должен быть указан маленькими буквами
 
@@ -75,14 +64,7 @@ fun String?.asLessonType(): LessonType = when (val lower = this?.trim()?.lowerca
 	"консультация",
 	-> LessonType.Consultation
 
-	else -> {
-		if (lower.contains(';') || lower.contains(',')) {
-			val types = lower.split(';', ',').map { it.asLessonType() }
-			LessonType.Other(types.joinToString(", ") { it.asShortString()!! })
-		} else {
-			LessonType.Other(lower)
-		}
-	}
+	else -> LessonType.Other(lower)
 
 	// если ни один LessonType не подходит к некоторым типам занятия в вашем ВУЗе,
 	// оставьте эти типы ниже, я обработаю их самостоятельно:
