@@ -42,7 +42,9 @@ import kotlin.String
 
 suspend fun getLessons(client: HttpClient, json: Json, schedule: Schedule): List<Lesson>? {
 	return try {
-		parseTimetable(client, schedule.url)
+		supervisorScope {
+			parseTimetable(client, schedule.url)
+		}
 	} catch (e: Exception) {
 		log(LogType.NetworkClientError, e)
 		return null
@@ -64,14 +66,12 @@ private suspend fun parseTimetable(client: HttpClient, url: String, parseOther: 
 			return@withContext emptyList()
 
 		val otherLessons = if (parseOther) {
-			supervisorScope {
-				timetableList.getElementsByTag("a").drop(1).map { it: Element ->
-					async(Dispatchers.IO) {
-						val res = parseTimetable(client, YOUR_PLACE.defaultUrl.dropLast(1) + it.attr("href"), false)
-						if (res == null)
-							cancel()
-						res!!
-					}
+			timetableList.getElementsByTag("a").drop(1).map { it: Element ->
+				async(Dispatchers.IO) {
+					val res = parseTimetable(client, YOUR_PLACE.defaultUrl.dropLast(1) + it.attr("href"), false)
+					if (res == null)
+						cancel()
+					res!!
 				}
 			}
 		} else emptyList()
