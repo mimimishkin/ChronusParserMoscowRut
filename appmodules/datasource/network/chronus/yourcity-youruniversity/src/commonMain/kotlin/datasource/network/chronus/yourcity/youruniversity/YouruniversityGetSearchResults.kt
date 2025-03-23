@@ -2,10 +2,12 @@ package datasource.network.chronus.yourcity.youruniversity
 
 import com.fleeksoft.ksoup.Ksoup
 import io.ktor.client.*
-import io.ktor.client.call.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import library.logger.LogType
@@ -15,33 +17,50 @@ import model.chronus.Schedule
 import model.chronus.ScheduleType.GROUP
 import model.chronus.ScheduleType.PERSON
 
-suspend fun getSearchResults(client: HttpClient, json: Json, query: String): List<Schedule>? {
-	val institutes = try {
-		client.get(GROUP_CATALOG).body<Institutes>().institutes
+@OptIn(ExperimentalCoroutinesApi::class)
+suspend fun getSearchResults(client: HttpClient, json: Json, query: String): List<Schedule>? = coroutineScope {
+	val groups = async { searchGroups(client, query) }
+	val professors = async { searchProfessors(client, query) }
+	if (groups.await() == null) {
+		professors.cancel()
+		return@coroutineScope null
+	}
+	if (professors.await() == null) {
+		return@coroutineScope null
+	}
+
+	groups.getCompleted()!! + professors.getCompleted()!!
+}
+
+private suspend fun searchGroups(client: HttpClient, query: String): List<Schedule>? {
+	val page = try {
+		client.get(YOUR_PLACE.defaultUrl + "timetable/").bodyAsText()
 	} catch (e: Exception) {
 		log(LogType.NetworkClientError, e)
 		return null
 	}
 
-	val groups = institutes.flatMap { it.courses.flatMap { it.specialties.flatMap { it.groups } } }
-	val schedules = groups.mapTo(mutableListOf()) {
-		Schedule(
-			name = it.name,
-			type = GROUP,
-			place = YOUR_PLACE,
-			url = YOUR_PLACE.defaultUrl + "groups/${it.id}"
-		)
+	return try {
+		withContext(Dispatchers.Default) {
+			Ksoup.parse(page).getElementsByTag("a").mapNotNull {
+				val link = it.attr("href")
+				val name = it.text()
+				if (link.startsWith("/timetable/") && name.contains(query, ignoreCase = true)) {
+					Schedule(
+						name = name.trim(),
+						type = GROUP,
+						place = YOUR_PLACE,
+						url = YOUR_PLACE.defaultUrl.dropLast(1) + link
+					)
+				} else {
+					null
+				}
+			}
+		}
+	} catch (e: Exception) {
+		log(LogType.ParseError, e)
+		null
 	}
-
-	// TODO: для получения списка преподавателей и аудиторий нет api,
-	//  поэтому парсим сайт с преподавателями (для аудиторий даже этого нет).
-	//  Но он разбит на страницы => передавать сюда query
-	val professors = searchProfessors(client, query)
-	if (professors != null) {
-		schedules += professors
-	}
-
-	return schedules
 }
 
 private suspend fun searchProfessors(client: HttpClient, query: String): List<Schedule>? {
@@ -54,14 +73,18 @@ private suspend fun searchProfessors(client: HttpClient, query: String): List<Sc
 
 	return try {
 		withContext(Dispatchers.Default) {
-			Ksoup.parse(page).getElementsByClass("search__people").map {
-				val name = it.getElementsByTag("a")
-				Schedule(
-					name = name.text(),
-					type = PERSON,
-					place = YOUR_PLACE,
-					url = YOUR_PLACE.defaultUrl + name.attr("href").substringAfterLast('/')
-				)
+			Ksoup.parse(page).getElementsByTag("a").mapNotNull {
+				val link = it.attr("href")
+				if (link.startsWith("/people/")) {
+					Schedule(
+						name = it.text(),
+						type = PERSON,
+						place = YOUR_PLACE,
+						url = YOUR_PLACE.defaultUrl.dropLast(1) + link + "/timetable"
+					)
+				} else {
+					null
+				}
 			}
 		}
 	} catch (e: Exception) {

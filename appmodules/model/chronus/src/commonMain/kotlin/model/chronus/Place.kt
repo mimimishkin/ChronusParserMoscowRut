@@ -31,8 +31,8 @@ enum class Place(
 		city = City.MOSCOW,
 		contributor = Contributor.YOU,
 		defaultUrl = "https://rut-miit.ru/",
-		minSearchChars = null,
-		searchType = SearchType.BY_GROUP_PERSON_PLACE,
+		minSearchChars = 0,
+		searchType = SearchType.BY_GROUP_PERSON,
 		lessonDurationInMinutes = 80
 	),
 }
