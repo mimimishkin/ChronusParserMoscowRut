@@ -124,7 +124,8 @@ private suspend fun parseTimetable(client: HttpClient, url: String, parseOther: 
 							} else {
 								about.getElementsByClass("icon-location").map {
 									val hint = it.attr("title")
-									locationHints += hint
+									if (!hint.startsWith("ГУК-") && !hint.startsWith("Учебный корпус"))
+										locationHints += hint
 
 									val name = it.lastChild().toString().replace("Аудитория ", "").trim()
 									val url = it.attribute("href")?.let { YOUR_PLACE.defaultUrl + it.value }
